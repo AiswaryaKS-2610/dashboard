@@ -1,0 +1,11 @@
+# Use Nginx as the base image
+FROM nginx:alpine
+
+# Copy *everything* in the current folder into Nginx's default web root
+COPY . /usr/share/nginx/html
+
+# Expose port 80 for HTTP traffic
+EXPOSE 80
+
+# Start Nginx in the foreground
+CMD ["nginx", "-g", "daemon off;"]
