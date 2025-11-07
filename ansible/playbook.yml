@@ -1,0 +1,71 @@
+- hosts: web
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repo
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Copy web folder to EC2
+      copy:
+        src: ../web/
+        dest: /home/ubuntu/web/
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Build Docker image from web folder
+      community.docker.docker_image:
+        name: sample-web
+        build:
+          path: /home/ubuntu/web
+        state: present
+
+    - name: Run Docker container
+      community.docker.docker_container:
+        name: sample-web
+        image: sample-web
+        state: started
+        restart_policy: always
+        published_ports:
+          - "80:80"
