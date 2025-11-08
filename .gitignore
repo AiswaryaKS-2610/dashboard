@@ -1,1 +1,5 @@
 terraform/keys/sample-key
+echo ".terraform/" >> ~/dashboard/terraform/.gitignore
+echo "*.tfstate" >> ~/dashboard/terraform/.gitignore
+echo "*.tfstate.backup" >> ~/dashboard/terraform/.gitignore
+echo "*.tfplan" >> ~/dashboard/terraform/.gitignore
