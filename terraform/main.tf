@@ -21,7 +21,7 @@ resource "aws_key_pair" "deploy_key" {
 
 # Security group for SSH (22) and HTTP (80)
 resource "aws_security_group" "web_sg" {
-  name        = "sample-web-sg"
+  name        = "sample-web-sg-1"
   description = "Allow SSH and HTTP"
 
   ingress {
