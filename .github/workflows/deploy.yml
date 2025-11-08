@@ -3,7 +3,7 @@ name: Deploy Dashboard Web to EC2
 on:
   push:
     branches:
-      - main  # Change to master if your repo uses master
+      - master  # Change to master if your repo uses master
   workflow_dispatch:
 
 jobs:
