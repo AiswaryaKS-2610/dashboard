@@ -43,4 +43,4 @@ jobs:
           docker stop resume-app || true
           docker rm resume-app || true
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/resume-app:latest
-          docker run -d -p 80:80 --name resume-app ${{ secrets.DOCKERHUB_USERNAME}}/resume-app:latest
+          docker run -d -p 80:80 --name resume-app ${{ secrets.DOCKERHUB_USERNAME }}/resume-app:latest
