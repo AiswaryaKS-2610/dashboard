@@ -46,8 +46,9 @@ resource "aws_security_group" "web_sg" {
   }
 }
 
+# EC2 instance with Amazon Linux 2
 resource "aws_instance" "web" {
-  ami                    = "ami-001db41e42e1ff69"  # ✅ Amazon Linux 2023 (eu-north-1)
+  ami                    = "ami-001db41e42e1ff69f"  # ✅ Latest Amazon Linux 2 in eu-north-1
   instance_type          = "t3.micro"
   key_name               = aws_key_pair.deploy_key.key_name
   vpc_security_group_ids = [aws_security_group.web_sg.id]
@@ -55,8 +56,26 @@ resource "aws_instance" "web" {
   tags = {
     Name = "sample-ec2"
   }
-}
 
+  # Provisioner to create user "hanubunu" and copy SSH key
+  provisioner "remote-exec" {
+    inline = [
+      "sudo adduser hanubunu",
+      "sudo mkdir -p /home/hanubunu/.ssh",
+      "sudo cp /home/ec2-user/.ssh/authorized_keys /home/hanubunu/.ssh/",
+      "sudo chown -R hanubunu:hanubunu /home/hanubunu/.ssh",
+      "sudo chmod 700 /home/hanubunu/.ssh",
+      "sudo chmod 600 /home/hanubunu/.ssh/authorized_keys"
+    ]
+
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"  # default Amazon Linux user
+      private_key = file("${path.module}/keys/sample-key")
+      host        = self.public_ip
+    }
+  }
+}
 
 # Output public IP
 output "public_ip" {
