@@ -13,7 +13,7 @@ provider "aws" {
   region = "eu-north-1"
 }
 
-# SSH key (stored inside terraform/keys)
+# SSHkey (stored inside terraform/keys)
 resource "aws_key_pair" "deploy_key" {
   key_name   = "sample-key"
   public_key = file("${path.module}/keys/sample-key.pub")
