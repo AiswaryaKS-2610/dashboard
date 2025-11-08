@@ -46,9 +46,8 @@ resource "aws_security_group" "web_sg" {
   }
 }
 
-# EC2 instance
 resource "aws_instance" "web" {
-  ami                    = "ami-01fd6fa49060e89a6"  # ✅ Ubuntu 22.04 LTS for eu-north-1
+  ami                    = "ami-07d9456e7e1f00204"  # ✅ Amazon Linux 2023 (eu-north-1)
   instance_type          = "t3.micro"
   key_name               = aws_key_pair.deploy_key.key_name
   vpc_security_group_ids = [aws_security_group.web_sg.id]
@@ -57,6 +56,7 @@ resource "aws_instance" "web" {
     Name = "sample-ec2"
   }
 }
+
 
 # Output public IP
 output "public_ip" {
