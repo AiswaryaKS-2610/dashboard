@@ -3,8 +3,8 @@ name: Deploy Dashboard Web to EC2
 on:
   push:
     branches:
-      - master  # Change to master if your repo uses master
-  workflow_dispatch:
+      - master  # Change to main if your default branch is main
+  workflow_dispatch:  # allows manual trigger
 
 jobs:
   deploy:
@@ -14,16 +14,23 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.MY_EC2_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H 13.60.48.237 >> ~/.ssh/known_hosts
+
     - name: Deploy web folder to EC2
       run: |
-        # Remove old web files (adjust target folder)
-        ssh -i ~/dashboard/terraform/keys/sample-key -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
+        # Remove old web files
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
           "rm -rf /home/ec2-user/dashboard-web/*"
 
         # Copy only the web folder
-        scp -i ~/dashboard/terraform/keys/sample-key -o StrictHostKeyChecking=no -r ./web/* ec2-user@13.60.48.237:/home/ec2-user/dashboard-web/
+        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -r ./web/* ec2-user@13.60.48.237:/home/ec2-user/dashboard-web/
 
         # Stop existing Docker container, remove it, and run Nginx serving web folder
-        ssh -i ~/dashboard/terraform/keys/sample-key -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
           "sudo docker stop dashboard-web || true && sudo docker rm dashboard-web || true && \
            sudo docker run -d -p 80:80 -v /home/ec2-user/dashboard-web:/usr/share/nginx/html --name dashboard-web nginx"
