@@ -3,8 +3,8 @@ name: Deploy Dashboard Web to EC2
 on:
   push:
     branches:
-      - master         # change to main if your default branch is main
-  workflow_dispatch: {}
+      - master            # change to 'main' if your default branch is main
+  workflow_dispatch: {}   # allows manual trigger
 
 jobs:
   deploy:
@@ -21,7 +21,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 13.60.48.237 >> ~/.ssh/known_hosts
 
-      - name: Deploy static site to EC2 (free port 80 first)
+      - name: Deploy web folder to EC2 (free port 80 first)
         env:
           HOST: 13.60.48.237
           USER: ec2-user
@@ -30,21 +30,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Ensure target dir exists and is writable
+          # 1) Ensure target dir exists and is writable
           ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$REMOTE_DIR' && sudo chown -R $USER:$USER '$REMOTE_DIR'"
 
-          # Copy the web folder contents
+          # 2) Remove old web files, then copy the new web folder contents
+          ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" "rm -rf '$REMOTE_DIR'/*"
           scp -i "$KEY" -o StrictHostKeyChecking=no -r ./web/* "$USER@$HOST":"$REMOTE_DIR/"
 
-          # Reclaim port 80 from ANY container, then run nginx serving the folder
-          ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" <<REMOTE
+          # 3) Reclaim port 80 from ANY container, then run nginx serving the folder
+          ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" <<'REMOTE'
           set -e
 
-          # Stop/remove any container publishing port 80
-          ids=\$(docker ps -q --filter "publish=80" || true)
-          if [ -n "\$ids" ]; then
-            docker stop \$ids >/dev/null 2>&1 || true
-            docker rm   \$ids >/dev/null 2>&1 || true
+          # Stop/remove whatever is publishing host port 80 (not just dashboard-web)
+          ids=$(docker ps -q --filter "publish=80" || true)
+          if [ -n "$ids" ]; then
+            docker stop $ids >/dev/null 2>&1 || true
+            docker rm   $ids >/dev/null 2>&1 || true
           fi
 
           # Clean legacy names you may have used
@@ -53,15 +54,15 @@ jobs:
           docker stop dashboard-app  >/dev/null 2>&1 || true
           docker rm   dashboard-app  >/dev/null 2>&1 || true
 
-          # If host web servers ever installed, stop them
+          # (Optional) Stop host web servers if ever installed
           if systemctl is-active --quiet nginx; then sudo systemctl stop nginx && sudo systemctl disable nginx; fi
           if systemctl is-active --quiet httpd; then sudo systemctl stop httpd && sudo systemctl disable httpd; fi
 
-          # Run nginx container on port 80 serving your folder
+          # Run nginx container on port 80 serving the copied folder
           docker pull nginx:alpine >/dev/null
           docker run -d --restart unless-stopped \
             -p 80:80 \
-            -v "$REMOTE_DIR":/usr/share/nginx/html \
+            -v "/home/ec2-user/dashboard-web":/usr/share/nginx/html \
             --name dashboard-web \
             nginx:alpine
 
@@ -71,8 +72,9 @@ jobs:
           sudo ss -ltnp | grep ":80" || true
 REMOTE
 
-      - name: Verify HTTP (curl)
+      # 4) (Optional) Verify HTTP responds
+      - name: Verify site is up
         env:
           HOST: 13.60.48.237
         run: |
-          curl -I --retry 6 --retry-delay 5 "http://$HOST" || (echo "Site not reachable" && exit 1)
+          curl -I --retry 6 --retry-delay 5 "http://$HOST"
