@@ -2,10 +2,12 @@
 - name: Setup Docker and deploy container (Amazon Linux 2)
   hosts: webserver
   become: yes
+  vars:
+    app_user: ec2-user
+    app_dir: /home/ec2-user/web
 
   pre_tasks:
-    # Bootstrap python3 on minimal images (safe no-op if already present)
-    - name: Ensure python3 present
+    - name: Ensure python3 present (bootstrap)
       raw: |
         if ! command -v python3 >/dev/null 2>&1; then
           sudo yum -y install python3
@@ -16,15 +18,11 @@
       setup:
 
   tasks:
-    - name: Update packages (AL2 / RedHat family)
-      yum:
-        name: "*"
-        state: latest
-
-    - name: Install Docker engine
+    - name: Install Docker (force yum backend)
       yum:
         name: docker
         state: present
+        use_backend: yum
 
     - name: Enable and start Docker
       service:
@@ -32,29 +30,29 @@
         state: started
         enabled: yes
 
-    - name: Add ec2-user to docker group (run docker without sudo)
+    - name: Add {{ app_user }} to docker group
       user:
-        name: ec2-user
+        name: "{{ app_user }}"
         groups: docker
         append: yes
 
     - name: Create app directory
       file:
-        path: /home/ec2-user/web
+        path: "{{ app_dir }}"
         state: directory
-        owner: ec2-user
-        group: ec2-user
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
         mode: "0755"
 
     - name: Copy web app files to server
       copy:
         src: ../web/
-        dest: /home/ec2-user/web/
-        owner: ec2-user
-        group: ec2-user
+        dest: "{{ app_dir }}/"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
 
     - name: Build docker image
-      command: docker build -t dashboard-app /home/ec2-user/web
+      command: docker build -t dashboard-app "{{ app_dir }}"
 
     - name: Stop existing container if present
       command: docker stop dashboard-app
