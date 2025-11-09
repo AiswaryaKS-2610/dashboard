@@ -1,46 +1,72 @@
 ---
-- name: Setup docker and deploy container
+- name: Setup Docker and deploy container (Amazon Linux 2)
   hosts: webserver
   become: yes
 
+  pre_tasks:
+    # Bootstrap python3 on minimal images (safe no-op if already present)
+    - name: Ensure python3 present
+      raw: |
+        if ! command -v python3 >/dev/null 2>&1; then
+          sudo yum -y install python3
+        fi
+      changed_when: false
+
+    - name: Gather facts
+      setup:
+
   tasks:
-    - name: Install required system packages
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-        update_cache: yes
+    - name: Update packages (AL2 / RedHat family)
+      yum:
+        name: "*"
+        state: latest
 
-    - name: Add Docker GPG key
-      shell: |
-        install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-        gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        chmod a+r /etc/apt/keyrings/docker.gpg
+    - name: Install Docker engine
+      yum:
+        name: docker
+        state: present
 
-    - name: Add Docker repository
-      copy:
-        dest: /etc/apt/sources.list.d/docker.list
-        content: |
-          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable
+    - name: Enable and start Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
 
-    - name: Install docker engine
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-        update_cache: yes
+    - name: Add ec2-user to docker group (run docker without sudo)
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Create app directory
+      file:
+        path: /home/ec2-user/web
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: "0755"
 
     - name: Copy web app files to server
       copy:
         src: ../web/
-        dest: /home/ubuntu/web
+        dest: /home/ec2-user/web/
+        owner: ec2-user
+        group: ec2-user
 
     - name: Build docker image
-      command: docker build -t dashboard-app /home/ubuntu/web
+      command: docker build -t dashboard-app /home/ec2-user/web
 
-    - name: Run docker container
-      command: docker run -d -p 80:80 --name dashboard-app dashboard-app
+    - name: Stop existing container if present
+      command: docker stop dashboard-app
+      register: stop_out
+      failed_when: false
+      changed_when: "'No such container' not in stop_out.stderr"
+
+    - name: Remove existing container if present
+      command: docker rm dashboard-app
+      register: rm_out
+      failed_when: false
+      changed_when: "'No such container' not in rm_out.stderr"
+
+    - name: Run container on port 80
+      command: docker run -d -p 80:80 --restart unless-stopped --name dashboard-app dashboard-app
