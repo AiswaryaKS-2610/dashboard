@@ -3,34 +3,76 @@ name: Deploy Dashboard Web to EC2
 on:
   push:
     branches:
-      - master  # Change to main if your default branch is main
-  workflow_dispatch:  # allows manual trigger
+      - master         # change to main if your default branch is main
+  workflow_dispatch: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup SSH key
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.MY_EC2_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H 13.60.48.237 >> ~/.ssh/known_hosts
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.MY_EC2_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 13.60.48.237 >> ~/.ssh/known_hosts
 
-    - name: Deploy web folder to EC2
-      run: |
-        # Remove old web files
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
-          "rm -rf /home/ec2-user/dashboard-web/*"
+      - name: Deploy static site to EC2 (free port 80 first)
+        env:
+          HOST: 13.60.48.237
+          USER: ec2-user
+          KEY: ~/.ssh/id_rsa
+          REMOTE_DIR: /home/ec2-user/dashboard-web
+        run: |
+          set -euo pipefail
 
-        # Copy only the web folder
-        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -r ./web/* ec2-user@13.60.48.237:/home/ec2-user/dashboard-web/
+          # Ensure target dir exists and is writable
+          ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$REMOTE_DIR' && sudo chown -R $USER:$USER '$REMOTE_DIR'"
 
-        # Stop existing Docker container, remove it, and run Nginx serving web folder
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@13.60.48.237 \
-          "sudo docker stop dashboard-web || true && sudo docker rm dashboard-web || true && \
-           sudo docker run -d -p 80:80 -v /home/ec2-user/dashboard-web:/usr/share/nginx/html --name dashboard-web nginx"
+          # Copy the web folder contents
+          scp -i "$KEY" -o StrictHostKeyChecking=no -r ./web/* "$USER@$HOST":"$REMOTE_DIR/"
+
+          # Reclaim port 80 from ANY container, then run nginx serving the folder
+          ssh -i "$KEY" -o StrictHostKeyChecking=no "$USER@$HOST" <<REMOTE
+          set -e
+
+          # Stop/remove any container publishing port 80
+          ids=\$(docker ps -q --filter "publish=80" || true)
+          if [ -n "\$ids" ]; then
+            docker stop \$ids >/dev/null 2>&1 || true
+            docker rm   \$ids >/dev/null 2>&1 || true
+          fi
+
+          # Clean legacy names you may have used
+          docker stop dashboard-web  >/dev/null 2>&1 || true
+          docker rm   dashboard-web  >/dev/null 2>&1 || true
+          docker stop dashboard-app  >/dev/null 2>&1 || true
+          docker rm   dashboard-app  >/dev/null 2>&1 || true
+
+          # If host web servers ever installed, stop them
+          if systemctl is-active --quiet nginx; then sudo systemctl stop nginx && sudo systemctl disable nginx; fi
+          if systemctl is-active --quiet httpd; then sudo systemctl stop httpd && sudo systemctl disable httpd; fi
+
+          # Run nginx container on port 80 serving your folder
+          docker pull nginx:alpine >/dev/null
+          docker run -d --restart unless-stopped \
+            -p 80:80 \
+            -v "$REMOTE_DIR":/usr/share/nginx/html \
+            --name dashboard-web \
+            nginx:alpine
+
+          echo "----- docker ps -----"
+          docker ps --format "table {{.Names}}\t{{.Ports}}"
+          echo "----- sockets on :80 -----"
+          sudo ss -ltnp | grep ":80" || true
+REMOTE
+
+      - name: Verify HTTP (curl)
+        env:
+          HOST: 13.60.48.237
+        run: |
+          curl -I --retry 6 --retry-delay 5 "http://$HOST" || (echo "Site not reachable" && exit 1)
